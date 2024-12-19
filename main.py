@@ -4,7 +4,7 @@ import numpy as np
 from pygame.locals import *
 from dokusan import generators
 from colorama import Fore, Style
-
+import time
 # Initialize Pygame
 pygame.init()
 
@@ -47,10 +47,9 @@ class CSP:
             if not self.domains[neighbor]:
                 return False, inferences
         return True, inferences
-
     def restore_domains(self, inferences):
         for var, values in inferences.items():
-            self.domains[var].update(values)
+            self.domains[var].update(values)  # Use update() instead of extend()
 
 class ArcConsistency:
     def __init__(self, grid):
@@ -108,7 +107,7 @@ class ArcConsistency:
             if self.revise(x1, x2):
                 if len(self.variables[x1]) == 0:
                     return False  # Inconsistent
-                print(f"Domain of {x1} revised: {self.variables[x1]}")
+                # print(f"Domain of {x1} revised: {self.variables[x1]}")
                 for neighbor in self.get_neighbors(x1[0], x1[1]):
                     if neighbor != x2:
                         queue.append((neighbor, x1))
@@ -119,6 +118,7 @@ class ArcConsistency:
         for value in list(self.variables[x1]):
             if all(value == val for val in self.variables[x2]):
                 self.variables[x1].remove(value)
+                print(f"Removed {value} from {x1} : Revised domain is {self.variables[x1]}")
                 revised = True
         return revised
 
@@ -410,13 +410,27 @@ def main():
                 sys.exit()
             if event.type == MOUSEBUTTONDOWN:
                 if gui.solve_button.collidepoint(event.pos):
-                                    solution=solver.solve()
-                                    if solution is None :
-                                        print("solution NOT found ")
-                                    else:
-                                        print("solution found")
-                                        game.update_board(solution)
-                                        gui.draw_numbers()  # Redraw numbers to reflect the solved state
+                        #start timer
+                        start_time = time.time()
+                        print(game.board)
+                        arc_consistency_solver = ArcConsistency(game.board.copy())
+
+                        if not arc_consistency_solver.apply_arc_consistency():
+                            print("this board has no solution")
+
+                        else:
+                            solution = solver.solve()
+                            if solution is None:
+                                print("solution NOT found ")
+
+                            else:
+                                print("solution found")
+                                end_time = time.time()
+                                elapsed_time = end_time - start_time
+                                print(f"Backtracking completed in {elapsed_time:.2f} seconds.")  # Print the elapsed time
+
+                                game.update_board(solution)
+                                gui.draw_numbers()  # Redraw numbers to reflect the solved state
                 else:
                     gui.select_cell(event.pos)
             if event.type == KEYDOWN:
