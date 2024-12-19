@@ -49,11 +49,12 @@ class CSP:
         return True, inferences
 
     def restore_domains(self, inferences):
+        """Undo domain pruning during backtracking."""
         for var, values in inferences.items():
-            self.domains[var].update(values)
+            self.domains[var].extend(values)
 
 class ArcConsistency:
-    def __init__(self, grid):
+    definit__(self, grid):
         self.grid = grid
         self.variables = {}
         self.arcs = []
@@ -209,30 +210,11 @@ class SudokuGame(CSP):
             print()  # Move to the next line
 
 class BacktrackingSolver:
-
     def __init__(self, game):
         self.game = game
-    def preprocess_with_ac3(self):
-        """Run AC-3 algorithm before starting backtracking"""
-        ac = ArcConsistency(self.game.board)
-        ac.represent_as_CSP()
-        ac.define_arcs()
-
-        if ac.apply_arc_consistency():
-            # Update game domains with AC-3 results
-            self.game.domains = ac.variables
-            print(f"{Fore.GREEN}AC-3 preprocessing complete. Domains reduced.{Style.RESET_ALL}")
-            return True
-        print(f"{Fore.RED}AC-3 detected inconsistency in the puzzle{Style.RESET_ALL}")
-        return False
 
     def solve(self):
-        """Main solving method with AC-3 preprocessing"""
-        # Run AC-3 first
-        if self.preprocess_with_ac3():
-            return self.backtrack({})
-        return None
-
+        return self.backtrack({})
 
     def backtrack(self, assignment):
         if len(assignment) == len(self.game.variables):
@@ -261,8 +243,14 @@ class BacktrackingSolver:
         return self.game.domains[var]
 
 # Sudoku GUI
+
+
+# Pygame initialization
+
+
+# Sudoku GUI
 class SudokuGUI:
-    def __init__(self, game, solver):
+    def _init_(self, game, solver):
         self.game = game
         self.solver = solver
         self.selected_cell = None
@@ -279,7 +267,8 @@ class SudokuGUI:
     def draw_numbers(self):
         for row in range(9):
             for col in range(9):
-                num = self.game.board[row][col]
+                index = self.game.get_index(row, col)
+                num = self.game.board[index]
                 if num != 0:
                     color = RED if (row, col) in self.invalid_cells else BLACK
                     text = FONT.render(str(num), True, color)
@@ -294,7 +283,7 @@ class SudokuGUI:
 
     def highlight_selected_cell(self):
         if self.selected_cell is not None:
-            row, col = divmod(self.selected_cell, 9)
+            row, col = self.game.get_row_col(self.selected_cell)
             pygame.draw.rect(screen, LIGHT_BLUE, (col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE), 3)
 
     def select_cell(self, pos):
@@ -302,23 +291,57 @@ class SudokuGUI:
         if x < GRID_SIZE and y < GRID_SIZE:
             row, col = y // CELL_SIZE, x // CELL_SIZE
             if 0 <= row < 9 and 0 <= col < 9:
-                self.selected_cell = row * 9 + col
+                self.selected_cell = self.game.get_index(row, col)
 
     def handle_keypress(self, key):
         if self.selected_cell is not None:
             num = key - pygame.K_0
             if 1 <= num <= 9:
                 index = self.selected_cell
-                row, col = divmod(index, 9)
-                self.game.board[row][col] = num
-                self.invalid_cells.discard((row, col))
-                self.draw_numbers()  # Redraw numbers immediately after updating
+                if self.game.is_valid_insertion(index, num):
+                    self.game.board[index] = num
+                    self.invalid_cells.discard(self.game.get_row_col(index))
+                else:
+                    self.invalid_cells.add(self.game.get_row_col(index))
             elif key == pygame.K_BACKSPACE:
                 index = self.selected_cell
-                row, col = divmod(index, 9)
-                self.game.board[row][col] = 0
-                self.invalid_cells.discard((row, col))
-                self.draw_numbers()  # Redraw numbers immediately after updating
+                self.game.board[index] = 0
+                self.invalid_cells.discard(self.game.get_row_col(index))
+
+
+# Interactive Mode GUI
+class InteractiveSudokuGUI(SudokuGUI):
+    def _init_(self, game, solver):
+        super()._init_(game, solver)
+        self.valid_solutions = []
+
+    def enable_interactive_mode(self):
+        """Initialize interactive mode with all possible solutions."""
+        self.valid_solutions = self.solver.find_all_solutions()
+        print(f"Interactive mode: {len(self.valid_solutions)} possible solutions found.")
+
+    def validate_user_move(self, index, num):
+        """Check if the user's move matches any of the valid solutions."""
+        for solution in self.valid_solutions:
+            if solution[index] == num:
+                return True
+        return False
+
+    def handle_keypress(self, key):
+        if self.selected_cell is not None:
+            num = key - pygame.K_0
+            index = self.selected_cell
+            if 1 <= num <= 9:
+                if self.validate_user_move(index, num):
+                    self.game.board[index] = num
+                    self.invalid_cells.discard(self.game.get_row_col(index))
+                else:
+                    self.invalid_cells.add(self.game.get_row_col(index))
+                    print("Invalid move! This number does not lead to a valid solution.")
+            elif key == pygame.K_BACKSPACE:
+                self.game.board[index] = 0
+                self.invalid_cells.discard(self.game.get_row_col(index))
+
 
 # Gradient Background
 def draw_gradient_background():
@@ -326,11 +349,13 @@ def draw_gradient_background():
         color = (200 - i // 4, 200 - i // 4, 255)
         pygame.draw.line(screen, color, (0, i), (SCREEN_WIDTH, i))
 
+
 # Menus
 def main_menu():
     title = TITLE_FONT.render("Sudoku Solver", True, BLACK)
     ai_button = pygame.Rect(150, 300, 300, 50)
     manual_button = pygame.Rect(150, 400, 300, 50)
+    interactive_button = pygame.Rect(150, 500, 300, 50)
 
     while True:
         draw_gradient_background()
@@ -338,12 +363,15 @@ def main_menu():
 
         pygame.draw.rect(screen, PURPLE, ai_button, border_radius=8)
         pygame.draw.rect(screen, PURPLE, manual_button, border_radius=8)
+        pygame.draw.rect(screen, PURPLE, interactive_button, border_radius=8)
 
         ai_text = BUTTON_FONT.render("AI Generated Board", True, WHITE)
         manual_text = BUTTON_FONT.render("Manual Input Mode", True, WHITE)
+        interactive_text = BUTTON_FONT.render("Interactive Mode", True, WHITE)
 
         screen.blit(ai_text, (ai_button.x + 20, ai_button.y + 10))
         screen.blit(manual_text, (manual_button.x + 20, manual_button.y + 10))
+        screen.blit(interactive_text, (interactive_button.x + 20, interactive_button.y + 10))
 
         for event in pygame.event.get():
             if event.type == QUIT:
@@ -354,8 +382,11 @@ def main_menu():
                     return "ai"
                 elif manual_button.collidepoint(event.pos):
                     return "manual"
+                elif interactive_button.collidepoint(event.pos):
+                    return "interactive"
 
         pygame.display.update()
+
 
 def ai_difficulty_menu(game):
     difficulties = {"Easy": 50, "Medium": 100, "Hard": 150}
@@ -378,24 +409,30 @@ def ai_difficulty_menu(game):
             if event.type == MOUSEBUTTONDOWN:
                 for difficulty, rect in buttons.items():
                     if rect.collidepoint(event.pos):
-                        # Generate a new board based on difficulty
-                        new_board = np.array(list(str(generators.random_sudoku(avg_rank=difficulties[difficulty])))).reshape((9, 9)).astype(int).tolist()
-                        game.load_board(new_board)  # Load new board into game
+                        board = list(map(int, str(generators.random_sudoku(avg_rank=difficulties[difficulty]))))
+                        if len(board) == 81:
+                            game.load_board(board)
                         return
 
         pygame.display.update()
 
+
 # Main Function
 def main():
-    initial_board = [[0] * 9 for _ in range(9)]  # Example empty board
-    game = SudokuGame(initial_board)  # Initialize game with an empty board
+    game = SudokuGame()
     solver = BacktrackingSolver(game)
-
     mode = main_menu()
 
     if mode == "ai":
         ai_difficulty_menu(game)
-    gui = SudokuGUI(game, solver)
+        gui = SudokuGUI(game, solver)  # Initialize GUI for AI mode
+    elif mode == "interactive":
+        gui = InteractiveSudokuGUI(game, solver)
+        board = list(map(int, str(generators.random_sudoku(avg_rank=100))))
+        game.load_board(board)
+        gui.enable_interactive_mode()
+    else:
+        gui = SudokuGUI(game, solver)  # Initialize GUI for manual mode
 
     running = True
     while running:
@@ -404,19 +441,28 @@ def main():
         gui.draw_numbers()
         gui.highlight_selected_cell()
         gui.draw_buttons()
+
         for event in pygame.event.get():
             if event.type == QUIT:
                 pygame.quit()
                 sys.exit()
             if event.type == MOUSEBUTTONDOWN:
                 if gui.solve_button.collidepoint(event.pos):
-                                    solution=solver.solve()
-                                    if solution is None :
-                                        print("solution NOT found ")
-                                    else:
-                                        print("solution found")
-                                        game.update_board(solution)
-                                        gui.draw_numbers()  # Redraw numbers to reflect the solved state
+                    print(game.board)
+                    arc_consistency_solver = ArcConsistency(game.board.copy())
+
+                    if not arc_consistency_solver.apply_arc_consistency():
+                        print("this board has no solution")
+
+                    else:
+                        solution = solver.solve()
+                        if solution is None:
+                            print("solution NOT found ")
+
+                        else:
+                            print("solution found")
+                            game.update_board(solution)
+                            gui.draw_numbers()  # Redraw numbers to reflect the solved state
                 else:
                     gui.select_cell(event.pos)
             if event.type == KEYDOWN:
@@ -424,5 +470,6 @@ def main():
 
         pygame.display.update()
 
-if __name__ == "__main__":
+
+if __name__ == "_main_":
     main()
